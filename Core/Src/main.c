@@ -31,6 +31,7 @@
 #include <rmw_microxrcedds_c/config.h>
 #include <rmw_microros/rmw_microros.h>
 
+#include <std_msgs/msg/u_int16.h>
 #include <std_msgs/msg/string.h>
 #include <sensor_msgs/msg/imu.h>
 
@@ -63,8 +64,10 @@ float wheel_speed = 0.0;
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+rcl_publisher_t publish_enc_cnt;
 rcl_publisher_t publisher_string;
 rcl_publisher_t publisher_imu;
+std_msgs__msg__UInt16 pub_enc_cnt_msg;
 std_msgs__msg__String pub_str_msg;
 sensor_msgs__msg__Imu pub_imu_msg;
 /* USER CODE END PM */
@@ -103,6 +106,15 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
+{
+	(void) last_call_time;
+	if (timer != NULL) {
+		pub_enc_cnt_msg.data = TIM3 -> CNT;
+		RCSOFTCHECK(rcl_publish(&publish_enc_cnt, &pub_enc_cnt_msg, NULL));
+	}
+}
+
 void subscription_str_callback(const void * msgin)
 {
   std_msgs__msg__String * msg = (std_msgs__msg__String *)msgin;
@@ -516,7 +528,22 @@ void StartDefaultTask(void *argument)
   // create node
   RCCHECK(rclc_node_init_default(&node, "f446re_node", "", &support));
 
+  // create timer,
+  	rcl_timer_t timer;
+  	const unsigned int timer_timeout = 100;
+  	RCCHECK(rclc_timer_init_default(
+  		&timer,
+  		&support,
+  		RCL_MS_TO_NS(timer_timeout),
+  		timer_callback));
+
   // create publisher
+  RCCHECK(rclc_publisher_init_best_effort(
+    &publish_enc_cnt,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt16),
+    "/f446re_enc_cnt_publisher"));
+
   RCCHECK(rclc_publisher_init_best_effort(
     &publisher_string,
     &node,
@@ -544,9 +571,10 @@ void StartDefaultTask(void *argument)
 
   // create executor
   rclc_executor_t executor = rclc_executor_get_zero_initialized_executor();
-  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_string, &sub_str_msg, &subscription_str_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_timer(&executor, &timer));
 
   // initialize message memory
   pub_str_msg.data.data = (char * ) malloc(ARRAY_LEN * sizeof(char));
