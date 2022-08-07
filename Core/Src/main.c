@@ -35,6 +35,7 @@
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/string.h>
 #include <sensor_msgs/msg/imu.h>
+#include <geometry_msgs/msg/twist.h>>
 
 #include <stdio.h>
 #include <string.h>
@@ -74,10 +75,12 @@ std_msgs__msg__UInt16 pub_enc_cnt_msg;
 std_msgs__msg__Float32 pub_wheel_speed_msg;
 std_msgs__msg__String pub_str_msg;
 sensor_msgs__msg__Imu pub_imu_msg;
+
+geometry_msgs__msg__Twist twist_msg;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
 
@@ -144,6 +147,12 @@ void subscription_imu_callback(const void * msgin)
   debug_led();
 }
 
+void subscription_twist_callback(const void * msgin)
+{
+  geometry_msgs__msg__Twist * msg = (geometry_msgs__msg__Twist *)msgin;
+  twist_msg = *msg;
+}
+
 void debug_led()
 {
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET); //LED turned on
@@ -188,6 +197,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		double wheel_speed_tmp = (move_per_pulse * get_encoder()) / sampling_time;
 		wheel_speed = low_pass_filter(wheel_speed, wheel_speed_tmp, 0.5);
 
+		ref_wheel_speed = twist_msg.linear.x;
 		double delta_wheel_speed = -ref_wheel_speed + wheel_speed;
 		i += delta_wheel_speed * sampling_time;
 
@@ -618,9 +628,10 @@ void StartDefaultTask(void *argument)
     printf("Error on default allocators (line %d)\n", __LINE__);
   }
 
-  rcl_subscription_t subscriber_string, subscriber_imu;
+  rcl_subscription_t subscriber_string, subscriber_imu, subscriber_twist;
   std_msgs__msg__String sub_str_msg;
   sensor_msgs__msg__Imu sub_imu_msg;
+  geometry_msgs__msg__Twist sub_twist_msg;
   rclc_support_t support;
   rcl_allocator_t allocator;
   rcl_node_t node;
@@ -679,12 +690,19 @@ void StartDefaultTask(void *argument)
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
     "/imu/data_raw"));
+	
+	RCCHECK(rclc_subscription_init_default(
+    &subscriber_twist,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+    "/cmd_vel"));
 
   // create executor
   rclc_executor_t executor = rclc_executor_get_zero_initialized_executor();
-  RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 4, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_string, &sub_str_msg, &subscription_str_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_twist, &sub_twist_msg, &subscription_twist_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
 
   // initialize message memory
@@ -712,6 +730,7 @@ void StartDefaultTask(void *argument)
   RCCHECK(rcl_publisher_fini(&publisher_imu, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_string, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_imu, &node));
+  RCCHECK(rcl_subscription_fini(&subscriber_twist, &node));
   RCCHECK(rcl_node_fini(&node));
   /* USER CODE END 5 */
 }
