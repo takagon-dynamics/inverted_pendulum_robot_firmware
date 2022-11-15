@@ -1,4 +1,6 @@
 /* USER CODE BEGIN Header */
+
+
 /**
   ******************************************************************************
   * @file           : main.c
@@ -55,6 +57,7 @@
 #define PI 3.1415926535
 
 #define WHEEL_DIA 0.07	/*[m]*/
+#define TREAD 0.195 /*[m]*/
 
 #define GEAR_RATIO 70
 #define CPR 64 			/*Count per rotation*/
@@ -62,7 +65,8 @@
 const float move_per_pulse = (WHEEL_DIA * PI) / (CPR * GEAR_RATIO); /*[m]*/
 const float sampling_time = 0.02; /*0.02[s]*/
 
-float wheel_speed = 0.0;
+double left_wheel_speed = 0.0;
+double right_wheel_speed = 0.0;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -80,9 +84,11 @@ geometry_msgs__msg__Twist twist_msg;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
 
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_rx;
@@ -107,6 +113,8 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM7_Init(void);
+static void MX_TIM1_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -122,7 +130,7 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 		pub_enc_cnt_msg.data = TIM3 -> CNT;
 		RCSOFTCHECK(rcl_publish(&publish_enc_cnt, &pub_enc_cnt_msg, NULL));
 
-		pub_wheel_speed_msg.data = wheel_speed;
+		pub_wheel_speed_msg.data = left_wheel_speed;
 		RCSOFTCHECK(rcl_publish(&publish_wheel_speed, &pub_wheel_speed_msg, NULL));
 	}
 }
@@ -165,7 +173,7 @@ double low_pass_filter(double val, float pre_val, float gamma){
 	return gamma * pre_val + (1.0 - gamma) * val;
 }
 
-int get_encoder(void){
+int get_left_encoder(void){
 	int16_t count = 0;
 	uint16_t enc_buff = TIM3 -> CNT;
 
@@ -179,36 +187,72 @@ int get_encoder(void){
 	return count;
 }
 
-double i = 0.0; //i制御用変数
-double wheel_dir = 0.0;
-double kp = 10000;  //P制御ゲイン
-double ki = 1200; //I制御ゲイン
-double ref_wheel_speed = 0.1;
+int get_right_encoder(void){
+	int16_t count = 0;
+	uint16_t enc_buff = TIM1 -> CNT;
+
+	TIM1 -> CNT = 0;
+
+	if(enc_buff > 32767){
+		count = (int16_t)enc_buff; //-1倍はCWがプラスになるよう調整用
+	}else{
+		count = (int16_t)enc_buff; //-1倍はCCWがマイナスになるよう調整用
+	}
+	return count;
+}
+
+double i_left = 0.0; //i制御用変数
+double i_right = 0.0;
+double left_wheel_dir = 0.0;
+double right_wheel_dir = 0.0;
+double kp_left = 8000, kp_right = 8000;  //P制御ゲイン
+double ki_left = 500, ki_right = 500;  //I制御ゲイン
+double ref_left_wheel_speed = 0.0; //左車輪目標速度
+double ref_right_wheel_speed = 0.0;//右車輪目標速度
 
 char scnt[200];
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
-
 	//タイマー割り込みコールバック関数
-	if(htim == &htim6){ //タイヤの速度計算(Timer10割り込み処理)
-		double wheel_speed_tmp = (move_per_pulse * get_encoder()) / sampling_time;
-		wheel_speed = low_pass_filter(wheel_speed, wheel_speed_tmp, 0.5);
+	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
+		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
+		ref_left_wheel_speed  = twist_msg.linear.x - (TREAD/2) * twist_msg.angular.z;
+		ref_right_wheel_speed = twist_msg.linear.x + (TREAD/2) * twist_msg.angular.z;
 
-		ref_wheel_speed = twist_msg.linear.x;
-		double delta_wheel_speed = -ref_wheel_speed + wheel_speed;
-		i += delta_wheel_speed * sampling_time;
+		double left_wheel_speed_tmp = (move_per_pulse * get_left_encoder()) / sampling_time;
+		double right_wheel_speed_tmp = (move_per_pulse * get_right_encoder()) / sampling_time;
 
-		wheel_dir = kp * delta_wheel_speed  + ki * i;
+		left_wheel_speed = low_pass_filter(left_wheel_speed, left_wheel_speed_tmp, 0.5);
+		right_wheel_speed = low_pass_filter(right_wheel_speed, right_wheel_speed_tmp, 0.5);
 
-		if(wheel_dir > 0){
+		double delta_left_wheel_speed = -ref_left_wheel_speed + left_wheel_speed;
+		double delta_right_wheel_speed = ref_right_wheel_speed - right_wheel_speed;
+
+		i_left += delta_left_wheel_speed * sampling_time;
+		i_right += delta_right_wheel_speed * sampling_time;
+
+		left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
+		right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
+
+		if(left_wheel_dir > 0){
+			if(left_wheel_dir>999) left_wheel_dir = 999;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(wheel_dir)));
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(left_wheel_dir)));
 		}else{
+			if(left_wheel_dir<-999) left_wheel_dir = 999;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(wheel_dir)));
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(left_wheel_dir)));
+		}
+
+		if(right_wheel_dir > 0){
+			if(right_wheel_dir>999) right_wheel_dir = 999;
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(right_wheel_dir)));
+		}else{
+			if(right_wheel_dir<-999) right_wheel_dir = 999;
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(right_wheel_dir)));
 		}
 	}
 }
@@ -247,11 +291,15 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM6_Init();
   MX_TIM2_Init();
+  MX_TIM7_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+  HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
   HAL_TIM_Base_Start_IT(&htim6);
-
+  HAL_TIM_Base_Start_IT(&htim7);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -349,6 +397,56 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_Encoder_InitTypeDef sConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 65535;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 0;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 0;
+  if (HAL_TIM_Encoder_Init(&htim1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -390,10 +488,12 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
+  __HAL_TIM_DISABLE_OCxPRELOAD(&htim2, TIM_CHANNEL_1);
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
+  __HAL_TIM_DISABLE_OCxPRELOAD(&htim2, TIM_CHANNEL_2);
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
@@ -425,7 +525,7 @@ static void MX_TIM3_Init(void)
   htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -471,7 +571,7 @@ static void MX_TIM6_Init(void)
   htim6.Init.Prescaler = 8400-1;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim6.Init.Period = 200-1;
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
     Error_Handler();
@@ -485,6 +585,44 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 8400-1;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 200-1;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
 
 }
 
