@@ -67,8 +67,6 @@ const float sampling_time = 0.02; /*0.02[s]*/
 
 const int PWM_MAX_VALUE = 999;
 
-double left_wheel_speed = 0.0;
-double right_wheel_speed = 0.0;
 double wheel_speed[2] = {0.0, 0.0};
 
 /* SPEED PID CONTROL DEFINE */
@@ -78,8 +76,6 @@ double left_wheel_dir = 0.0;
 double right_wheel_dir = 0.0;
 double kp_left = 8000, kp_right = 7500;  //P制御ゲイン
 double ki_left = 20, ki_right = 20;  //I制御ゲイン
-double ref_left_wheel_speed = 0.0; //左車輪目標速度
-double ref_right_wheel_speed = 0.0;//右車輪目標速度
 double ref_wheel_speed[2] = {0.0, 0.0}; //左右車輪目標速度
 
 /* INVERTED PENDULUM PID CONTROL DEFINE */
@@ -148,7 +144,7 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 		pub_enc_cnt_msg.data = TIM3 -> CNT;
 		RCSOFTCHECK(rcl_publish(&publish_enc_cnt, &pub_enc_cnt_msg, NULL));
 
-		pub_wheel_speed_msg.data = left_wheel_speed;
+		pub_wheel_speed_msg.data = wheel_speed[0];
 		RCSOFTCHECK(rcl_publish(&publish_wheel_speed, &pub_wheel_speed_msg, NULL));
 	}
 }
@@ -233,6 +229,44 @@ void twist_to_wheelspeed(double linear_x, double angular_z, double wheelspeed[2]
 	wheelspeed[1] = linear_x + (TREAD/2) * angular_z;
 }
 
+void LEFTMOTOR_SetPwm(double wheeldir)
+{
+	/*
+	 * 	説明：左モーターに印加するPWMを設定
+	 * 	引数：
+	 * 		(wheeldir) -PWM_MAX_VALUE~PWM_MAX_VALUEの値
+	 * 					正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
+	 * */
+	if(wheeldir > 0){
+		if(wheeldir>PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(wheeldir)));
+	}else{
+		if(wheeldir<-PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(wheeldir)));
+	}
+}
+
+void RIGHTMOTOR_SetPwm(double wheeldir)
+{
+	/*
+	 * 	説明：右モーターに印加するPWMを設定
+	 * 	引数：
+	 * 		(wheeldir) -PWM_MAX_VALUE~PWM_MAX_VALUEの値
+	 * 					正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
+	 * */
+	if(wheeldir > 0){
+		if(wheeldir>PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(wheeldir)));
+	}else{
+		if(wheeldir<-PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(wheeldir)));
+	}
+}
+
 char scnt[200];
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -258,25 +292,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
 		right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
 
-		if(left_wheel_dir > 0){
-			if(left_wheel_dir>PWM_MAX_VALUE) left_wheel_dir = PWM_MAX_VALUE;
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(left_wheel_dir)));
-		}else{
-			if(left_wheel_dir<-PWM_MAX_VALUE) left_wheel_dir = PWM_MAX_VALUE;
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(left_wheel_dir)));
-		}
-
-		if(right_wheel_dir > 0){
-			if(right_wheel_dir>PWM_MAX_VALUE) right_wheel_dir = PWM_MAX_VALUE;
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(right_wheel_dir)));
-		}else{
-			if(right_wheel_dir<-PWM_MAX_VALUE) right_wheel_dir = PWM_MAX_VALUE;
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(right_wheel_dir)));
-		}
+		LEFTMOTOR_SetPwm(left_wheel_dir);
+		RIGHTMOTOR_SetPwm(right_wheel_dir);
 	}
 }
 /* USER CODE END 0 */
