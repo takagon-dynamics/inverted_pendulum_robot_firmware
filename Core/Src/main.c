@@ -65,10 +65,26 @@
 const float move_per_pulse = (WHEEL_DIA * PI) / (CPR * GEAR_RATIO); /*[m]*/
 const float sampling_time = 0.02; /*0.02[s]*/
 
-const int PWM_VALUE_MAX = 999;
+const int PWM_MAX_VALUE = 999;
 
 double left_wheel_speed = 0.0;
 double right_wheel_speed = 0.0;
+double wheel_speed[2] = {0.0, 0.0};
+
+/* SPEED PID CONTROL DEFINE */
+double i_left = 0.0; //i制御用変数
+double i_right = 0.0;
+double left_wheel_dir = 0.0;
+double right_wheel_dir = 0.0;
+double kp_left = 8000, kp_right = 7500;  //P制御ゲイン
+double ki_left = 20, ki_right = 20;  //I制御ゲイン
+double ref_left_wheel_speed = 0.0; //左車輪目標速度
+double ref_right_wheel_speed = 0.0;//右車輪目標速度
+double ref_wheel_speed[2] = {0.0, 0.0}; //左右車輪目標速度
+
+/* INVERTED PENDULUM PID CONTROL DEFINE */
+
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -203,14 +219,19 @@ int get_right_encoder(void){
 	return count;
 }
 
-double i_left = 0.0; //i制御用変数
-double i_right = 0.0;
-double left_wheel_dir = 0.0;
-double right_wheel_dir = 0.0;
-double kp_left = 8000, kp_right = 7500;  //P制御ゲイン
-double ki_left = 20, ki_right = 20;  //I制御ゲイン
-double ref_left_wheel_speed = 0.0; //左車輪目標速度
-double ref_right_wheel_speed = 0.0;//右車輪目標速度
+void twist_to_wheelspeed(double linear_x, double angular_z, double wheelspeed[2])
+{
+	/*	説明：ロボットの並進速度と旋回角速度から左右の車輪の速度を計算
+	 *	引数：
+	 *		(linear_x) ロボットの並進速度
+	 *		(linear_z) ロボットの旋回角速度
+	 *	戻り値：
+	 *		(wheelspeed[]) 左右の車輪の速度
+	 */
+
+	wheelspeed[0] = linear_x - (TREAD/2) * angular_z;
+	wheelspeed[1] = linear_x + (TREAD/2) * angular_z;
+}
 
 char scnt[200];
 
@@ -219,17 +240,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//タイマー割り込みコールバック関数
 	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
 		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
-		ref_left_wheel_speed  = twist_msg.linear.x - (TREAD/2) * twist_msg.angular.z;
-		ref_right_wheel_speed = twist_msg.linear.x + (TREAD/2) * twist_msg.angular.z;
+
+		twist_to_wheelspeed(twist_msg.linear.x, twist_msg.angular.z, ref_wheel_speed);
 
 		double left_wheel_speed_tmp = (move_per_pulse * get_left_encoder()) / sampling_time;
 		double right_wheel_speed_tmp = (move_per_pulse * get_right_encoder()) / sampling_time;
 
-		left_wheel_speed = low_pass_filter(left_wheel_speed, left_wheel_speed_tmp, 0.5);
-		right_wheel_speed = low_pass_filter(right_wheel_speed, right_wheel_speed_tmp, 0.5);
+		wheel_speed[0] = low_pass_filter(wheel_speed[0], left_wheel_speed_tmp, 0.5);
+		wheel_speed[1] = low_pass_filter(wheel_speed[1], right_wheel_speed_tmp, 0.5);
 
-		double delta_left_wheel_speed = -ref_left_wheel_speed + left_wheel_speed;
-		double delta_right_wheel_speed = ref_right_wheel_speed - right_wheel_speed;
+		double delta_left_wheel_speed = -ref_wheel_speed[0] + wheel_speed[0];
+		double delta_right_wheel_speed = ref_wheel_speed[1] - wheel_speed[1];
 
 		i_left += delta_left_wheel_speed * sampling_time;
 		i_right += delta_right_wheel_speed * sampling_time;
