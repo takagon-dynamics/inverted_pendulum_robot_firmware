@@ -65,6 +65,8 @@
 const float move_per_pulse = (WHEEL_DIA * PI) / (CPR * GEAR_RATIO); /*[m]*/
 const float sampling_time = 0.02; /*0.02[s]*/
 
+const int PWM_VALUE_MAX = 999;
+
 double left_wheel_speed = 0.0;
 double right_wheel_speed = 0.0;
 /* USER CODE END PD */
@@ -84,7 +86,7 @@ geometry_msgs__msg__Twist twist_msg;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
@@ -205,8 +207,8 @@ double i_left = 0.0; //i制御用変数
 double i_right = 0.0;
 double left_wheel_dir = 0.0;
 double right_wheel_dir = 0.0;
-double kp_left = 8000, kp_right = 8000;  //P制御ゲイン
-double ki_left = 500, ki_right = 500;  //I制御ゲイン
+double kp_left = 8000, kp_right = 7500;  //P制御ゲイン
+double ki_left = 20, ki_right = 20;  //I制御ゲイン
 double ref_left_wheel_speed = 0.0; //左車輪目標速度
 double ref_right_wheel_speed = 0.0;//右車輪目標速度
 
@@ -236,21 +238,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
 
 		if(left_wheel_dir > 0){
-			if(left_wheel_dir>999) left_wheel_dir = 999;
+			if(left_wheel_dir>PWM_MAX_VALUE) left_wheel_dir = PWM_MAX_VALUE;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
 			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(left_wheel_dir)));
 		}else{
-			if(left_wheel_dir<-999) left_wheel_dir = 999;
+			if(left_wheel_dir<-PWM_MAX_VALUE) left_wheel_dir = PWM_MAX_VALUE;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
 			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (int)(fabs(left_wheel_dir)));
 		}
 
 		if(right_wheel_dir > 0){
-			if(right_wheel_dir>999) right_wheel_dir = 999;
+			if(right_wheel_dir>PWM_MAX_VALUE) right_wheel_dir = PWM_MAX_VALUE;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(right_wheel_dir)));
 		}else{
-			if(right_wheel_dir<-999) right_wheel_dir = 999;
+			if(right_wheel_dir<-PWM_MAX_VALUE) right_wheel_dir = PWM_MAX_VALUE;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(right_wheel_dir)));
 		}
