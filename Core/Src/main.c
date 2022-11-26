@@ -54,6 +54,9 @@
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Aborting.\n",__LINE__,(int)temp_rc); return 1;}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Continuing.\n",__LINE__,(int)temp_rc);}}
 
+#define CONTROL_MODE 0 /*WHEELSPEED_PI_CONTROL 0
+ 	 	 	 	 	 	   *INVERTED_PENDULUM_PID_CONTROL 1
+ 	 	 	 	 	 	   */
 #define PI 3.1415926535
 
 #define WHEEL_DIA 0.07	/*[m]*/
@@ -272,28 +275,32 @@ char scnt[200];
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	//タイマー割り込みコールバック関数
-	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
-		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
+	if(htim == &htim7){ //タイヤの速度計算(Timer7 0.02[ms] 割り込み処理)
+		if(CONTROL_MODE == 0){ //wheel speed pid control
+			HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
 
-		twist_to_wheelspeed(twist_msg.linear.x, twist_msg.angular.z, ref_wheel_speed);
+			twist_to_wheelspeed(twist_msg.linear.x, twist_msg.angular.z, ref_wheel_speed);
 
-		double left_wheel_speed_tmp = (move_per_pulse * get_left_encoder()) / sampling_time;
-		double right_wheel_speed_tmp = (move_per_pulse * get_right_encoder()) / sampling_time;
+			double left_wheel_speed_tmp = (move_per_pulse * get_left_encoder()) / sampling_time;
+			double right_wheel_speed_tmp = (move_per_pulse * get_right_encoder()) / sampling_time;
 
-		wheel_speed[0] = low_pass_filter(wheel_speed[0], left_wheel_speed_tmp, 0.5);
-		wheel_speed[1] = low_pass_filter(wheel_speed[1], right_wheel_speed_tmp, 0.5);
+			wheel_speed[0] = low_pass_filter(wheel_speed[0], left_wheel_speed_tmp, 0.5);
+			wheel_speed[1] = low_pass_filter(wheel_speed[1], right_wheel_speed_tmp, 0.5);
 
-		double delta_left_wheel_speed = -ref_wheel_speed[0] + wheel_speed[0];
-		double delta_right_wheel_speed = ref_wheel_speed[1] - wheel_speed[1];
+			double delta_left_wheel_speed = -ref_wheel_speed[0] + wheel_speed[0];
+			double delta_right_wheel_speed = ref_wheel_speed[1] - wheel_speed[1];
 
-		i_left += delta_left_wheel_speed * sampling_time;
-		i_right += delta_right_wheel_speed * sampling_time;
+			i_left += delta_left_wheel_speed * sampling_time;
+			i_right += delta_right_wheel_speed * sampling_time;
 
-		left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
-		right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
+			left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
+			right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
 
-		LEFTMOTOR_SetPwm(left_wheel_dir);
-		RIGHTMOTOR_SetPwm(right_wheel_dir);
+			LEFTMOTOR_SetPwm(left_wheel_dir);
+			RIGHTMOTOR_SetPwm(right_wheel_dir);
+		}else if(CONTROL_MODE == 1){ //inverted pendulum pid control
+
+		}
 	}
 }
 /* USER CODE END 0 */
