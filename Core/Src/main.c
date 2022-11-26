@@ -22,6 +22,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "math.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -218,6 +219,8 @@ int get_right_encoder(void){
 	return count;
 }
 
+
+
 void twist_to_wheelspeed(double linear_x, double angular_z, double wheelspeed[2])
 {
 	/*	説明：ロボットの並進速度と旋回角速度から左右の車輪の速度を計算
@@ -238,7 +241,7 @@ void LEFTMOTOR_SetPwm(double wheeldir)
 	 * 	説明：左モーターに印加するPWMを設定
 	 * 	引数：
 	 * 		(wheeldir) -PWM_MAX_VALUE~PWM_MAX_VALUEの値
-	 * 					正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
+	 * 		正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
 	 * */
 	if(wheeldir > 0){
 		if(wheeldir>PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
@@ -257,7 +260,7 @@ void RIGHTMOTOR_SetPwm(double wheeldir)
 	 * 	説明：右モーターに印加するPWMを設定
 	 * 	引数：
 	 * 		(wheeldir) -PWM_MAX_VALUE~PWM_MAX_VALUEの値
-	 * 					正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
+	 * 		正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
 	 * */
 	if(wheeldir > 0){
 		if(wheeldir>PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;  //PWM入力制限
@@ -268,6 +271,32 @@ void RIGHTMOTOR_SetPwm(double wheeldir)
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(wheeldir)));
 	}
+}
+
+void getEulerAngle(double* roll, double* pitch, double* yaw){
+
+	double w = pub_imu_msg.orientation.w;
+	double x = pub_imu_msg.orientation.x;
+	double y = pub_imu_msg.orientation.y;
+	double z = pub_imu_msg.orientation.z;
+
+	//roll
+	double sinr_cosp = 2.0 * (w*x + y*z);
+	double cosr_cosp = 1.0 - 2.0 * (x*x + y*y);
+	*roll = atan2(sinr_cosp, cosr_cosp);
+
+	//pitch
+	double sinp = 2.0 * (w*y - z*x);
+	if(fabs(sinp) >= 1){
+		*pitch = copysign(M_PI / 2, sinp);
+	}else{
+		*pitch = asin(sinp);
+	}
+
+	//yaw
+	double siny_cosp = 2.0 * (w*z + x*y);
+	double cosy_cosp = 1.0 - 2.0 * (y*y + z*z);
+	*yaw = atan2(siny_cosp,cosy_cosp);
 }
 
 char scnt[200];
@@ -296,18 +325,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
 			right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
 
-			if(left_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
-				i_left = 0;
-			}
-
-			if(right_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
-				i_right = 0;
-			}
+//			if(left_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
+//				i_left = 0;
+//			}
+//
+//			if(right_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
+//				i_right = 0;
+//			}
 
 			LEFTMOTOR_SetPwm(left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
-		}else if(CONTROL_MODE == 1){ //inverted pendulum pid control
 
+		}else if(CONTROL_MODE == 1){ //inverted pendulum pid control
+//			angle = TILT;
+//			angle_velocity = angle - old_angle;
+//			old_angle = angle;
+//
+//			position =
+
+			LEFTMOTOR_SetPwm(left_wheel_dir);
+			RIGHTMOTOR_SetPwm(right_wheel_dir);
 		}
 	}
 }
