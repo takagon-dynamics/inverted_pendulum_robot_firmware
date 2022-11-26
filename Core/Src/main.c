@@ -83,7 +83,18 @@ double ki_left = 20, ki_right = 20;  //I制御ゲイン
 double ref_wheel_speed[2] = {0.0, 0.0}; //左右車輪目標速度
 
 /* INVERTED PENDULUM PID CONTROL DEFINE */
+double K[4] = {0.0,0.0,0.0,0.0};
 
+double angle = 0.0;
+double old_angle = 0.0;
+double angle_velocity = 0.0;
+
+double left_distance = 0.0;
+double right_distance = 0.0;
+double distance = 0.0;
+double velocity = 0.0;
+
+double steering = 0.0;
 
 /* USER CODE END PD */
 
@@ -202,6 +213,7 @@ int get_left_encoder(void){
 	}else{
 		count = (int16_t)enc_buff * -1; //-1倍はCCWがマイナスになるよう調整用
 	}
+
 	return count;
 }
 
@@ -216,6 +228,7 @@ int get_right_encoder(void){
 	}else{
 		count = (int16_t)enc_buff; //-1倍はCCWがマイナスになるよう調整用
 	}
+
 	return count;
 }
 
@@ -332,16 +345,32 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //			if(right_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
 //				i_right = 0;
 //			}
-
 			LEFTMOTOR_SetPwm(left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
 
 		}else if(CONTROL_MODE == 1){ //inverted pendulum pid control
-//			angle = TILT;
-//			angle_velocity = angle - old_angle;
-//			old_angle = angle;
-//
-//			position =
+
+			double left_wheel_pos = move_per_pulse * get_left_encoder();
+			double right_wheel_pos = move_per_pulse * get_right_encoder();
+
+			left_distance += left_wheel_pos;
+			right_distance += right_wheel_pos;
+
+			double left_wheel_speed = left_wheel_pos / sampling_time;
+			double right_wheel_speed = right_wheel_pos / sampling_time;
+
+			double roll = 0, pitch = 0, yaw = 0;
+			getEulerAngle(&roll, &pitch, &yaw);
+
+			angle = pitch;
+			angle_velocity = (angle - old_angle) / sampling_time;
+			old_angle = angle;
+
+			distance = (left_distance + right_distance) / 2;
+			velocity = (left_wheel_speed + right_wheel_speed) / 2;
+
+			left_wheel_dir = (angle_velocity * K[0]) + (angle * K[1]) + (velocity * K[2]) + (distance * K[3]) + steering;
+			right_wheel_dir = (angle_velocity * K[0]) + (angle * K[1]) + (velocity * K[2]) + (distance * K[3]) - steering;
 
 			LEFTMOTOR_SetPwm(left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
