@@ -260,11 +260,11 @@ void RIGHTMOTOR_SetPwm(double wheeldir)
 	 * 					正の値を設定すると正転(CW),負の値を設定すると逆転(CCW)
 	 * */
 	if(wheeldir > 0){
-		if(wheeldir>PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
+		if(wheeldir>PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;  //PWM入力制限
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(wheeldir)));
 	}else{
-		if(wheeldir<-PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE;
+		if(wheeldir<-PWM_MAX_VALUE) wheeldir = PWM_MAX_VALUE; //PWM入力制限
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, (int)(fabs(wheeldir)));
 	}
@@ -295,6 +295,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 			left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
 			right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
+
+			if(left_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
+				i_left = 0;
+			}
+
+			if(right_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
+				i_right = 0;
+			}
 
 			LEFTMOTOR_SetPwm(left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
