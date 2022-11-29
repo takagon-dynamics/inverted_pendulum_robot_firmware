@@ -270,4 +270,4 @@ VP_TIM7_VS_ClockSourceINT.Mode=Enable_Timer
 VP_TIM7_VS_ClockSourceINT.Signal=TIM7_VS_ClockSourceINT
 board=NUCLEO-F446RE
 boardIOC=true
-isbadioc=false
+isbadioc=true

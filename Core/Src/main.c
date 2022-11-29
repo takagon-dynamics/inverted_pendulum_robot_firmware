@@ -56,7 +56,7 @@
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Aborting.\n",__LINE__,(int)temp_rc); return 1;}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Continuing.\n",__LINE__,(int)temp_rc);}}
 
-#define CONTROL_MODE 1 /*WHEELSPEED_PI_CONTROL 0
+#define CONTROL_MODE 0 /*WHEELSPEED_PI_CONTROL 0
  	 	 	 	 	 	   *INVERTED_PENDULUM_PID_CONTROL 1
  	 	 	 	 	 	   */
 #define PI 3.1415926535
@@ -85,7 +85,7 @@ double ref_wheel_speed[2] = {0.0, 0.0}; //左右車輪目標速度
 
 /* INVERTED PENDULUM PID CONTROL DEFINE */
 //double K[4] = {0.0,0.0,0.0,0.0};
-double K[4];
+double K[4] = {100,100,0,0};
 double angle = 0.0;
 double old_angle = 0.0;
 double angle_velocity = 0.0;
@@ -109,7 +109,9 @@ std_msgs__msg__UInt16 pub_enc_cnt_msg;
 std_msgs__msg__Float32 pub_wheel_speed_msg;
 std_msgs__msg__String pub_str_msg;
 
-std_msgs__msg__Float32MultiArray  kgain_msg;
+std_msgs__msg__Float32MultiArray kgain_msg;
+kgain_msg = std_msgs__msg__Float32MultiArray__create();
+
 
 sensor_msgs__msg__Imu pub_imu_msg;
 geometry_msgs__msg__Twist twist_msg;
@@ -354,10 +356,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //			if(right_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
 //				i_right = 0;
 //			}
+
 			LEFTMOTOR_SetPwm(left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
 
 		}else if(CONTROL_MODE == 1){ //inverted pendulum pid control
+
+			HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
+
 			K[0] = kgain_msg.data.data[0];
 			K[1] = kgain_msg.data.data[1];
 			K[2] = kgain_msg.data.data[2];
@@ -385,7 +391,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			left_wheel_dir = (angle_velocity * K[0]) + (angle * K[1]) + (velocity * K[2]) + (distance * K[3]) + steering;
 			right_wheel_dir = (angle_velocity * K[0]) + (angle * K[1]) + (velocity * K[2]) + (distance * K[3]) - steering;
 
-			LEFTMOTOR_SetPwm(left_wheel_dir);
+			LEFTMOTOR_SetPwm(-left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
 		}
 	}
@@ -861,7 +867,6 @@ bool cubemx_transport_close(struct uxrCustomTransport * transport);
 size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err);
 size_t cubemx_transport_read(struct uxrCustomTransport* transport, uint8_t* buf, size_t len, int timeout, uint8_t* err);
 
-
 void * microros_allocate(size_t size, void * state);
 void microros_deallocate(void * pointer, void * state);
 void * microros_reallocate(void * pointer, size_t size, void * state);
@@ -963,7 +968,7 @@ void StartDefaultTask(void *argument)
     &subscriber_imu,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    "/imu/data_raw"));
+    "/imu/data"));
 	
 	RCCHECK(rclc_subscription_init_default(
     &subscriber_twist,
@@ -985,7 +990,7 @@ void StartDefaultTask(void *argument)
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_string, &sub_str_msg, &subscription_str_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_twist, &sub_twist_msg, &subscription_twist_callback, ON_NEW_DATA));
-  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_kgain, &sub_kgain_msg, &subscription_Kgain_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_kgain, &sub_kgain_msg, &subscription_kgain_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
 
   // initialize message memory
