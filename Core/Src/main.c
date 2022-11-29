@@ -85,7 +85,7 @@ double ref_wheel_speed[2] = {0.0, 0.0}; //左右車輪目標速度
 
 /* INVERTED PENDULUM PID CONTROL DEFINE */
 //double K[4] = {0.0,0.0,0.0,0.0};
-double K[4] = {100,100,0,0};
+double K[4] = {100.0,0.0,0.0,0.0};
 double angle = 0.0;
 double old_angle = 0.0;
 double angle_velocity = 0.0;
@@ -105,16 +105,15 @@ rcl_publisher_t publish_enc_cnt;
 rcl_publisher_t publish_wheel_speed;
 rcl_publisher_t publisher_string;
 rcl_publisher_t publisher_imu;
+
 std_msgs__msg__UInt16 pub_enc_cnt_msg;
 std_msgs__msg__Float32 pub_wheel_speed_msg;
 std_msgs__msg__String pub_str_msg;
-
-std_msgs__msg__Float32MultiArray kgain_msg;
-kgain_msg = std_msgs__msg__Float32MultiArray__create();
-
-
+//std_msgs__msg__Float32MultiArray kgain_msg;
+//kgain_msg = std_msgs__msg__Float32MultiArray__create();
 sensor_msgs__msg__Imu pub_imu_msg;
 geometry_msgs__msg__Twist twist_msg;
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -189,17 +188,17 @@ void subscription_imu_callback(const void * msgin)
   debug_led();
 }
 
-void subscription_Kgain_callback(const void * msgin)
-{
-	std_msgs__msg__Float32MultiArray * msg = (std_msgs__msg__Float32MultiArray *)msgin;
-	kgain_msg = *msg;
-}
-
 void subscription_twist_callback(const void * msgin)
 {
   geometry_msgs__msg__Twist * msg = (geometry_msgs__msg__Twist *)msgin;
   twist_msg = *msg;
 }
+
+//void subscription_Kgain_callback(const void * msgin)
+//{
+//	std_msgs__msg__Float32MultiArray * msg = (std_msgs__msg__Float32MultiArray *)msgin;
+//	kgain_msg = *msg;
+//}
 
 void debug_led()
 {
@@ -364,10 +363,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 			HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
 
-			K[0] = kgain_msg.data.data[0];
-			K[1] = kgain_msg.data.data[1];
-			K[2] = kgain_msg.data.data[2];
-			K[3] = kgain_msg.data.data[3];
+//			K[0] = kgain_msg.data.data[0];
+//			K[1] = kgain_msg.data.data[1];
+//			K[2] = kgain_msg.data.data[2];
+//			K[3] = kgain_msg.data.data[3];
 
 			double left_wheel_pos = move_per_pulse * get_left_encoder();
 			double right_wheel_pos = move_per_pulse * get_right_encoder();
@@ -909,7 +908,7 @@ void StartDefaultTask(void *argument)
   std_msgs__msg__String sub_str_msg;
   sensor_msgs__msg__Imu sub_imu_msg;
   geometry_msgs__msg__Twist sub_twist_msg;
-  std_msgs__msg__Float32MultiArray sub_kgain_msg;
+//  std_msgs__msg__Float32MultiArray sub_kgain_msg;
 
   rclc_support_t support;
   rcl_allocator_t allocator;
@@ -976,11 +975,11 @@ void StartDefaultTask(void *argument)
     ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
     "/cmd_vel"));
 
-	RCCHECK(rclc_subscription_init_default(
-	&subscriber_kgain,
-	&node,
-	ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-	"/k_gain"));
+//	RCCHECK(rclc_subscription_init_default(
+//	&subscriber_kgain,
+//	&node,
+//	ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+//	"/k_gain"));
 
 
 
@@ -990,7 +989,7 @@ void StartDefaultTask(void *argument)
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_string, &sub_str_msg, &subscription_str_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_twist, &sub_twist_msg, &subscription_twist_callback, ON_NEW_DATA));
-  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_kgain, &sub_kgain_msg, &subscription_kgain_callback, ON_NEW_DATA));
+//  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_kgain, &sub_kgain_msg, &subscription_kgain_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
 
   // initialize message memory
@@ -1010,9 +1009,9 @@ void StartDefaultTask(void *argument)
   sub_imu_msg.header.frame_id.data =(char * ) malloc(100 * sizeof(char));
   sub_imu_msg.header.frame_id.size = 0;
 
-  sub_kgain_msg.data.capacity = 100;
-  sub_kgain_msg.data.data = (float * ) malloc(100 * sizeof(float));
-  sub_kgain_msg.data.size = 0;
+//  sub_kgain_msg.data.capacity = 100;
+//  sub_kgain_msg.data.data = (float * ) malloc(100 * sizeof(float));
+//  sub_kgain_msg.data.size = 0;
 
   // execute subscriber
   rclc_executor_spin(&executor);
@@ -1023,6 +1022,7 @@ void StartDefaultTask(void *argument)
   RCCHECK(rcl_subscription_fini(&subscriber_string, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_imu, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_twist, &node));
+//  RCCHECK(rcl_subscription_fini(&subscriber_kgain, &node));
   RCCHECK(rcl_node_fini(&node));
   /* USER CODE END 5 */
 }
