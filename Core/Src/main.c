@@ -22,10 +22,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "math.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <math.h>
+#include "liquidcrystal_i2c.h"
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <rclc/rclc.h>
@@ -38,8 +39,7 @@
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/string.h>
 #include <sensor_msgs/msg/imu.h>
-#include <geometry_msgs/msg/twist.h>
-#include <std_msgs/msg/float32_multi_array.h>
+#include <geometry_msgs/msg/twist.h>>
 
 #include <stdio.h>
 #include <string.h>
@@ -72,6 +72,8 @@ const float sampling_time = 0.02; /*0.02[s]*/
 
 const int PWM_MAX_VALUE = 999;
 
+double left_wheel_speed = 0.0;
+double right_wheel_speed = 0.0;
 double wheel_speed[2] = {0.0, 0.0};
 
 /* SPEED PID CONTROL DEFINE */
@@ -79,13 +81,15 @@ double i_left = 0.0; //i制御用変数
 double i_right = 0.0;
 double left_wheel_dir = 0.0;
 double right_wheel_dir = 0.0;
-double kp_left = 8000, kp_right = 7500;  //P制御ゲイン
+double kp_left = 8000, kp_right = 8000;  //P制御ゲイン
 double ki_left = 20, ki_right = 20;  //I制御ゲイン
+double ref_left_wheel_speed = 0.0; //左車輪目標速度
+double ref_right_wheel_speed = 0.0;//右車輪目標速度
 double ref_wheel_speed[2] = {0.0, 0.0}; //左右車輪目標速度
 
 /* INVERTED PENDULUM PID CONTROL DEFINE */
 //double K[4] = {0.0,0.0,0.0,0.0};
-double K[4] = {100.0,0.0,0.0,0.0};
+double K[4] = {0.0,0.0,0.0,0.0};
 double angle = 0.0;
 double old_angle = 0.0;
 double angle_velocity = 0.0;
@@ -109,14 +113,16 @@ rcl_publisher_t publisher_imu;
 std_msgs__msg__UInt16 pub_enc_cnt_msg;
 std_msgs__msg__Float32 pub_wheel_speed_msg;
 std_msgs__msg__String pub_str_msg;
-//std_msgs__msg__Float32MultiArray kgain_msg;
-//kgain_msg = std_msgs__msg__Float32MultiArray__create();
+
 sensor_msgs__msg__Imu pub_imu_msg;
+
 geometry_msgs__msg__Twist twist_msg;
 
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ I2C_HandleTypeDef hi2c1;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -148,6 +154,7 @@ static void MX_TIM6_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM7_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_I2C1_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -160,11 +167,19 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 {
 	(void) last_call_time;
 	if (timer != NULL) {
-		pub_enc_cnt_msg.data = TIM3 -> CNT;
-		RCSOFTCHECK(rcl_publish(&publish_enc_cnt, &pub_enc_cnt_msg, NULL));
 
-		pub_wheel_speed_msg.data = wheel_speed[0];
-		RCSOFTCHECK(rcl_publish(&publish_wheel_speed, &pub_wheel_speed_msg, NULL));
+		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
+
+		char lcd_print[8] = "Takagon";
+		HD44780_Clear();
+		HD44780_NoDisplay();
+		HD44780_PrintStr(lcd_print);
+		HD44780_Display();
+
+//		pub_enc_cnt_msg.data = TIM3 -> CNT;
+//		RCSOFTCHECK(rcl_publish(&publish_enc_cnt, &pub_enc_cnt_msg, NULL));
+//		pub_wheel_speed_msg.data = left_wheel_speed;
+//		RCSOFTCHECK(rcl_publish(&publish_wheel_speed, &pub_wheel_speed_msg, NULL));
 	}
 }
 
@@ -172,20 +187,19 @@ void subscription_str_callback(const void * msgin)
 {
   std_msgs__msg__String * msg = (std_msgs__msg__String *)msgin;
   pub_str_msg = *msg;
-  char str[100];
-  strcpy(str, msg->data.data);
-  sprintf(pub_str_msg.data.data, "F446RE heard: %s", str);
-  pub_str_msg.data.size = strlen(pub_str_msg.data.data);
-  rcl_publish(&publisher_string, &pub_str_msg, NULL);
-  debug_led();
+//  char str[100];
+//  strcpy(str, msg->data.data);
+//  sprintf(pub_str_msg.data.data, "F446RE heard: %s", str);
+//  pub_str_msg.data.size = strlen(pub_str_msg.data.data);
+//  rcl_publish(&publisher_string, &pub_str_msg, NULL);
 }
 
 void subscription_imu_callback(const void * msgin)
 {
   sensor_msgs__msg__Imu * msg = (sensor_msgs__msg__Imu *)msgin;
   pub_imu_msg = *msg;
-  rcl_publish(&publisher_imu, &pub_imu_msg, NULL);
-  debug_led();
+//  rcl_publish(&publisher_imu, &pub_imu_msg, NULL);
+//  debug_led();
 }
 
 void subscription_twist_callback(const void * msgin)
@@ -193,12 +207,6 @@ void subscription_twist_callback(const void * msgin)
   geometry_msgs__msg__Twist * msg = (geometry_msgs__msg__Twist *)msgin;
   twist_msg = *msg;
 }
-
-//void subscription_Kgain_callback(const void * msgin)
-//{
-//	std_msgs__msg__Float32MultiArray * msg = (std_msgs__msg__Float32MultiArray *)msgin;
-//	kgain_msg = *msg;
-//}
 
 void debug_led()
 {
@@ -223,7 +231,6 @@ int get_left_encoder(void){
 	}else{
 		count = (int16_t)enc_buff * -1; //-1倍はCCWがマイナスになるよう調整用
 	}
-
 	return count;
 }
 
@@ -234,15 +241,12 @@ int get_right_encoder(void){
 	TIM1 -> CNT = 0;
 
 	if(enc_buff > 32767){
-		count = (int16_t)enc_buff; //-1倍はCWがプラスになるよう調整用
+		count = (int16_t)enc_buff;
 	}else{
-		count = (int16_t)enc_buff; //-1倍はCCWがマイナスになるよう調整用
+		count = (int16_t)enc_buff;
 	}
-
 	return count;
 }
-
-
 
 void twist_to_wheelspeed(double linear_x, double angular_z, double wheelspeed[2])
 {
@@ -316,7 +320,6 @@ void getEulerAngle(double* roll, double* pitch, double* yaw){
 		*pitch = asin(sinp);
 	}
 
-	//yaw
 	double siny_cosp = 2.0 * (w*z + x*y);
 	double cosy_cosp = 1.0 - 2.0 * (y*y + z*z);
 	*yaw = atan2(siny_cosp,cosy_cosp);
@@ -327,8 +330,9 @@ char scnt[200];
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	//タイマー割り込みコールバック関数
-	if(htim == &htim7){ //タイヤの速度計算(Timer7 0.02[ms] 割り込み処理)
-		if(CONTROL_MODE == 0){ //wheel speed pid control
+	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
+		if(CONTROL_MODE == 0){
+
 			HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
 
 			twist_to_wheelspeed(twist_msg.linear.x, twist_msg.angular.z, ref_wheel_speed);
@@ -348,25 +352,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
 			right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
 
-//			if(left_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
-//				i_left = 0;
-//			}
-//
-//			if(right_wheel_dir >= PWM_MAX_VALUE){ //Anti-Windup-Control
-//				i_right = 0;
-//			}
-
 			LEFTMOTOR_SetPwm(left_wheel_dir);
 			RIGHTMOTOR_SetPwm(right_wheel_dir);
 
-		}else if(CONTROL_MODE == 1){ //inverted pendulum pid control
-
-			HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
-
+		}else if(CONTROL_MODE == 1){
 //			K[0] = kgain_msg.data.data[0];
 //			K[1] = kgain_msg.data.data[1];
 //			K[2] = kgain_msg.data.data[2];
 //			K[3] = kgain_msg.data.data[3];
+			K[0] = 0;
+//			K[0] = -300;
+			K[1] = 500;
+			K[2] = 0;
+			K[3] = 0;
 
 			double left_wheel_pos = move_per_pulse * get_left_encoder();
 			double right_wheel_pos = move_per_pulse * get_right_encoder();
@@ -380,7 +378,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			double roll = 0, pitch = 0, yaw = 0;
 			getEulerAngle(&roll, &pitch, &yaw);
 
-			angle = pitch;
+			angle = roll;
 			angle_velocity = (angle - old_angle) / sampling_time;
 			old_angle = angle;
 
@@ -432,13 +430,19 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM7_Init();
   MX_TIM1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
   HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
+
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_Base_Start_IT(&htim7);
+
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+
+  HD44780_Init(2);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -480,7 +484,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	 HAL_Delay( 100 );
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -533,6 +536,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 1000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -709,7 +746,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 8400-1;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 200-1;
+  htim6.Init.Period = 10000-1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -866,6 +903,7 @@ bool cubemx_transport_close(struct uxrCustomTransport * transport);
 size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err);
 size_t cubemx_transport_read(struct uxrCustomTransport* transport, uint8_t* buf, size_t len, int timeout, uint8_t* err);
 
+
 void * microros_allocate(size_t size, void * state);
 void microros_deallocate(void * pointer, void * state);
 void * microros_reallocate(void * pointer, size_t size, void * state);
@@ -904,12 +942,10 @@ void StartDefaultTask(void *argument)
     printf("Error on default allocators (line %d)\n", __LINE__);
   }
 
-  rcl_subscription_t subscriber_string, subscriber_imu, subscriber_twist, subscriber_kgain;
+  rcl_subscription_t subscriber_string, subscriber_imu, subscriber_twist;
   std_msgs__msg__String sub_str_msg;
   sensor_msgs__msg__Imu sub_imu_msg;
   geometry_msgs__msg__Twist sub_twist_msg;
-//  std_msgs__msg__Float32MultiArray sub_kgain_msg;
-
   rclc_support_t support;
   rcl_allocator_t allocator;
   rcl_node_t node;
@@ -924,7 +960,7 @@ void StartDefaultTask(void *argument)
 
   // create timer,
   	rcl_timer_t timer;
-  	const unsigned int timer_timeout = 100;
+  	const unsigned int timer_timeout = 1000;
   	RCCHECK(rclc_timer_init_default(
   		&timer,
   		&support,
@@ -975,21 +1011,12 @@ void StartDefaultTask(void *argument)
     ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
     "/cmd_vel"));
 
-//	RCCHECK(rclc_subscription_init_default(
-//	&subscriber_kgain,
-//	&node,
-//	ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-//	"/k_gain"));
-
-
-
   // create executor
   rclc_executor_t executor = rclc_executor_get_zero_initialized_executor();
   RCCHECK(rclc_executor_init(&executor, &support.context, 4, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_string, &sub_str_msg, &subscription_str_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_twist, &sub_twist_msg, &subscription_twist_callback, ON_NEW_DATA));
-//  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_kgain, &sub_kgain_msg, &subscription_kgain_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
 
   // initialize message memory
@@ -1009,10 +1036,6 @@ void StartDefaultTask(void *argument)
   sub_imu_msg.header.frame_id.data =(char * ) malloc(100 * sizeof(char));
   sub_imu_msg.header.frame_id.size = 0;
 
-//  sub_kgain_msg.data.capacity = 100;
-//  sub_kgain_msg.data.data = (float * ) malloc(100 * sizeof(float));
-//  sub_kgain_msg.data.size = 0;
-
   // execute subscriber
   rclc_executor_spin(&executor);
 
@@ -1022,7 +1045,6 @@ void StartDefaultTask(void *argument)
   RCCHECK(rcl_subscription_fini(&subscriber_string, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_imu, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_twist, &node));
-//  RCCHECK(rcl_subscription_fini(&subscriber_kgain, &node));
   RCCHECK(rcl_node_fini(&node));
   /* USER CODE END 5 */
 }
