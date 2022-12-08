@@ -56,7 +56,7 @@
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Aborting.\n",__LINE__,(int)temp_rc); return 1;}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Continuing.\n",__LINE__,(int)temp_rc);}}
 
-#define CONTROL_MODE 0 /*WHEELSPEED_PI_CONTROL 0
+#define CONTROL_MODE 1 /*WHEELSPEED_PI_CONTROL 0
  	 	 	 	 	 	   *INVERTED_PENDULUM_PID_CONTROL 1
  	 	 	 	 	 	   */
 #define PI 3.1415926535
@@ -163,6 +163,11 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static float lcd_print_roll = 0.0;
+static float lcd_print_pitch = 0.0;
+static float lcd_print_yaw = 0.0;
+
 void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 {
 	(void) last_call_time;
@@ -170,10 +175,15 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 
 		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
 
-		char lcd_print[8] = "Takagon";
+		char lcd_print1[16];
+		char lcd_print2[16];
+
+		snprintf(lcd_print1, sizeof(lcd_print1), "%.2f,%.2f,%.2f",lcd_print_roll,lcd_print_pitch,lcd_print_yaw);
+		snprintf(lcd_print2, sizeof(lcd_print2), "TAKAGON");
+
 		HD44780_Clear();
 		HD44780_NoDisplay();
-		HD44780_PrintStr(lcd_print);
+		HD44780_PrintStr(lcd_print1);
 		HD44780_Display();
 
 //		pub_enc_cnt_msg.data = TIM3 -> CNT;
@@ -307,22 +317,37 @@ void getEulerAngle(double* roll, double* pitch, double* yaw){
 	double y = pub_imu_msg.orientation.y;
 	double z = pub_imu_msg.orientation.z;
 
-	//roll
-	double sinr_cosp = 2.0 * (w*x + y*z);
-	double cosr_cosp = 1.0 - 2.0 * (x*x + y*y);
-	*roll = atan2(sinr_cosp, cosr_cosp);
+	float q0q0 =  w * w;
+	float q1q1 =  x * x;
+	float q2q2 =  y * y;
+	float q3q3 =  z * z;
+	float q0q1 =  w * x;
+	float q0q2 =  w * y;
+	float q0q3 =  w * z;
+	float q1q2 =  x * y;
+	float q1q3 =  x * z;
+	float q2q3 =  y * z;
 
-	//pitch
-	double sinp = 2.0 * (w*y - z*x);
-	if(fabs(sinp) >= 1){
-		*pitch = copysign(M_PI / 2, sinp);
-	}else{
-		*pitch = asin(sinp);
-	}
+	*roll = atan2f((2.f * (q2q3 + q0q1)), (q0q0 - q1q1 - q2q2 + q3q3));
+	*pitch = -asinf((2.f * (q1q3 - q0q2)));
+	*yaw = atan2f((2.f * (q1q2 + q0q3)), (q0q0 + q1q1 - q2q2 - q3q3));
 
-	double siny_cosp = 2.0 * (w*z + x*y);
-	double cosy_cosp = 1.0 - 2.0 * (y*y + z*z);
-	*yaw = atan2(siny_cosp,cosy_cosp);
+//	//roll
+//	double sinr_cosp = 2.0 * (w*x + y*z);
+//	double cosr_cosp = 1.0 - 2.0 * (x*x + y*y);
+//	*roll = atan2(sinr_cosp, cosr_cosp);
+//
+//	//pitch
+//	double sinp = 2.0 * (w*y - z*x);
+//	if(fabs(sinp) >= 1){
+//		*pitch = copysign(M_PI / 2, sinp);
+//	}else{
+//		*pitch = asin(sinp);
+//	}
+//
+//	double siny_cosp = 2.0 * (w*z + x*y);
+//	double cosy_cosp = 1.0 - 2.0 * (y*y + z*z);
+//	*yaw = atan2(siny_cosp,cosy_cosp);
 }
 
 char scnt[200];
@@ -332,8 +357,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//タイマー割り込みコールバック関数
 	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
 		if(CONTROL_MODE == 0){
-
-			HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
 
 			twist_to_wheelspeed(twist_msg.linear.x, twist_msg.angular.z, ref_wheel_speed);
 
@@ -361,10 +384,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //			K[2] = kgain_msg.data.data[2];
 //			K[3] = kgain_msg.data.data[3];
 			K[0] = 0;
-//			K[0] = -300;
-			K[1] = 500;
+			K[1] = 0;
 			K[2] = 0;
 			K[3] = 0;
+
+			double avx = pub_imu_msg.angular_velocity.x;
+			double avy = pub_imu_msg.angular_velocity.y;
+			double avz = pub_imu_msg.angular_velocity.z;
 
 			double left_wheel_pos = move_per_pulse * get_left_encoder();
 			double right_wheel_pos = move_per_pulse * get_right_encoder();
@@ -378,8 +404,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			double roll = 0, pitch = 0, yaw = 0;
 			getEulerAngle(&roll, &pitch, &yaw);
 
-			angle = roll;
+			lcd_print_roll = roll;
+			lcd_print_pitch = pitch;
+			lcd_print_yaw = yaw;
+
+			angle = pitch;
+//			angle_velocity = (angle - old_angle) / sampling_time;
 			angle_velocity = (angle - old_angle) / sampling_time;
+
+			angle_velocity = avy;
+
 			old_angle = angle;
 
 			distance = (left_distance + right_distance) / 2;
@@ -442,7 +476,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
 
-  HD44780_Init(2);
+  HD44780_Init(2);	//LCD1602 init
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -960,7 +994,7 @@ void StartDefaultTask(void *argument)
 
   // create timer,
   	rcl_timer_t timer;
-  	const unsigned int timer_timeout = 1000;
+  	const unsigned int timer_timeout = 100;
   	RCCHECK(rclc_timer_init_default(
   		&timer,
   		&support,
