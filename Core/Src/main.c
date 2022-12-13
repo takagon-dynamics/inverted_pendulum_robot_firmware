@@ -74,11 +74,14 @@ double right_wheel_speed = 0.0;
 rcl_publisher_t publish_enc_cnt;
 rcl_publisher_t publish_wheel_speed;
 rcl_publisher_t publisher_string;
-rcl_publisher_t publisher_imu;
+
+//rcl_publisher_t publisher_imu;
+
 std_msgs__msg__UInt16 pub_enc_cnt_msg;
 std_msgs__msg__Float32 pub_wheel_speed_msg;
 std_msgs__msg__String pub_str_msg;
-sensor_msgs__msg__Imu pub_imu_msg;
+
+//sensor_msgs__msg__Imu pub_imu_msg;
 
 geometry_msgs__msg__Twist twist_msg;
 /* USER CODE END PM */
@@ -147,13 +150,13 @@ void subscription_str_callback(const void * msgin)
   debug_led();
 }
 
-void subscription_imu_callback(const void * msgin)
-{
-  sensor_msgs__msg__Imu * msg = (sensor_msgs__msg__Imu *)msgin;
-  pub_imu_msg = *msg;
-  rcl_publish(&publisher_imu, &pub_imu_msg, NULL);
-  debug_led();
-}
+//void subscription_imu_callback(const void * msgin)
+//{
+//  sensor_msgs__msg__Imu * msg = (sensor_msgs__msg__Imu *)msgin;
+//  pub_imu_msg = *msg;
+//  rcl_publish(&publisher_imu, &pub_imu_msg, NULL);
+//  debug_led();
+//}
 
 void subscription_twist_callback(const void * msgin)
 {
@@ -820,11 +823,11 @@ void StartDefaultTask(void *argument)
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
     "/f446re_string_publisher"));
 
-  RCCHECK(rclc_publisher_init_best_effort(
-    &publisher_imu,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    "/f446re_imu_publisher"));
+//  RCCHECK(rclc_publisher_init_best_effort(
+//    &publisher_imu,
+//    &node,
+//    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+//    "/f446re_imu_publisher"));
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(
@@ -833,11 +836,11 @@ void StartDefaultTask(void *argument)
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
     "/f446re_string_subscriber"));
 
-  RCCHECK(rclc_subscription_init_default(
-    &subscriber_imu,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    "/imu/data_raw"));
+//  RCCHECK(rclc_subscription_init_default(
+//    &subscriber_imu,
+//    &node,
+//    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+//    "/imu/data_raw"));
 	
 	RCCHECK(rclc_subscription_init_default(
     &subscriber_twist,
@@ -847,9 +850,9 @@ void StartDefaultTask(void *argument)
 
   // create executor
   rclc_executor_t executor = rclc_executor_get_zero_initialized_executor();
-  RCCHECK(rclc_executor_init(&executor, &support.context, 4, &allocator));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_string, &sub_str_msg, &subscription_str_callback, ON_NEW_DATA));
-  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
+//  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_imu, &sub_imu_msg, &subscription_imu_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_twist, &sub_twist_msg, &subscription_twist_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
 
@@ -858,26 +861,26 @@ void StartDefaultTask(void *argument)
   pub_str_msg.data.size = 0;
   pub_str_msg.data.capacity = ARRAY_LEN;
 
-  pub_imu_msg.header.frame_id.capacity = 100;
-  pub_imu_msg.header.frame_id.data =(char * ) malloc(100 * sizeof(char));
-  pub_imu_msg.header.frame_id.size = 0;
+//  pub_imu_msg.header.frame_id.capacity = 100;
+//  pub_imu_msg.header.frame_id.data =(char * ) malloc(100 * sizeof(char));
+//  pub_imu_msg.header.frame_id.size = 0;
 
   sub_str_msg.data.data = (char * ) malloc(ARRAY_LEN * sizeof(char));
   sub_str_msg.data.size = 0;
   sub_str_msg.data.capacity = ARRAY_LEN;
 
-  sub_imu_msg.header.frame_id.capacity = 100;
-  sub_imu_msg.header.frame_id.data =(char * ) malloc(100 * sizeof(char));
-  sub_imu_msg.header.frame_id.size = 0;
+//  sub_imu_msg.header.frame_id.capacity = 100;
+//  sub_imu_msg.header.frame_id.data =(char * ) malloc(100 * sizeof(char));
+//  sub_imu_msg.header.frame_id.size = 0;
 
   // execute subscriber
   rclc_executor_spin(&executor);
 
   // cleaning Up
   RCCHECK(rcl_publisher_fini(&publisher_string, &node));
-  RCCHECK(rcl_publisher_fini(&publisher_imu, &node));
+//  RCCHECK(rcl_publisher_fini(&publisher_imu, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_string, &node));
-  RCCHECK(rcl_subscription_fini(&subscriber_imu, &node));
+//  RCCHECK(rcl_subscription_fini(&subscriber_imu, &node));
   RCCHECK(rcl_subscription_fini(&subscriber_twist, &node));
   RCCHECK(rcl_node_fini(&node));
   /* USER CODE END 5 */
