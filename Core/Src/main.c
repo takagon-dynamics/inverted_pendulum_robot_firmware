@@ -221,8 +221,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
 		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
 
-		ref_left_wheel_speed  = twist_msg.linear.x - (TREAD/2) * twist_msg.angular.z;
-		ref_right_wheel_speed = twist_msg.linear.x + (TREAD/2) * twist_msg.angular.z;
+		ref_left_wheel_speed  = twist_msg.linear.x + (TREAD/2) * twist_msg.angular.z;
+		ref_right_wheel_speed = twist_msg.linear.x - (TREAD/2) * twist_msg.angular.z;
 
 		double left_wheel_speed_tmp = (move_per_pulse * get_left_encoder()) / sampling_time;
 		double right_wheel_speed_tmp = (move_per_pulse * get_right_encoder()) / sampling_time;
