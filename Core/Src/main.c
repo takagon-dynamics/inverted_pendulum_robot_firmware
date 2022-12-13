@@ -217,6 +217,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//タイマー割り込みコールバック関数
 	if(htim == &htim7){ //タイヤの速度計算(Timer10割り込み処理)
 		HAL_GPIO_TogglePin(LD2_GPIO_Port,LD2_Pin);
+
 		ref_left_wheel_speed  = twist_msg.linear.x - (TREAD/2) * twist_msg.angular.z;
 		ref_right_wheel_speed = twist_msg.linear.x + (TREAD/2) * twist_msg.angular.z;
 
@@ -229,8 +230,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		double delta_left_wheel_speed = -ref_left_wheel_speed + left_wheel_speed;
 		double delta_right_wheel_speed = ref_right_wheel_speed - right_wheel_speed;
 
-		i_left += delta_left_wheel_speed * sampling_time;
-		i_right += delta_right_wheel_speed * sampling_time;
+		if(ref_left_wheel_speed == 0.0){
+			i_left = 0;
+		}else{
+			i_left += delta_left_wheel_speed * sampling_time;
+		}
+
+		if(ref_right_wheel_speed == 0.0){
+			i_right = 0;
+		}else{
+			i_right += delta_right_wheel_speed * sampling_time;
+		}
 
 		left_wheel_dir = kp_left * delta_left_wheel_speed  + ki_left * i_left;
 		right_wheel_dir = kp_right * delta_right_wheel_speed + ki_right * i_right;
